@@ -64,7 +64,7 @@ class Config:
     barcode_height_scale_percent: float = 100.0
 
     # Вертикальный отступ штрихкода в процентах от высоты карточки.
-    # Если None — штрихкод центрируется по высоте (с учётом текста сверху).
+    # Если None, штрихкод центрируется по высоте (с учетом текста сверху).
     barcode_top_offset_percent: Optional[float] = None
 
     # Смещение штрихкода от правого края карточки в миллиметрах
@@ -79,26 +79,49 @@ class Config:
 
 DEFAULT_CONFIG = Config()
 
+# Вшитая конфигурация для веб-версии (config.json не используется в process_file_web)
+WEB_CONFIG = Config(
+    card_width_mm=35,
+    card_height_mm=16,
+    card_border_thickness_mm=0.1,
+
+    # ВАЖНО: на Streamlit Cloud обычно Linux, пути C:\Windows\Fonts там нет.
+    # Если Arial не найдется, код уйдет в fallback (DejaVuSans).
+    # Если нужно 100% одинаково онлайн, добавь TTF в репозиторий и укажи "arial.ttf".
+    font_path=r"C:\Windows\Fonts\arial.ttf",
+    font_size_pt=25,
+    text_orientation="horizontal",
+    text_top_offset_mm=1,
+
+    barcode_width_mm=36,
+    barcode_height_scale_percent=80,
+    barcode_top_offset_percent=22,
+    barcode_right_offset_mm=10,
+
+    cards_per_row=5,
+    gap_mm=1,
+    top_margin_mm=12,
+
+    export_individual_cards=True,
+)
+
 logger = logging.getLogger("cards")
 
 
 # ===================== Утилиты конвертации =====================
 def mm_to_points(mm_value: float) -> float:
     """Перевод миллиметров в поинты (ReportLab)."""
-
     return mm_value / MM_IN_INCH * PT_IN_INCH
 
 
 def mm_to_px(mm_value: float, dpi: int = DPI) -> int:
     """Перевод миллиметров в пиксели для Pillow."""
-
     return int(round(mm_value / MM_IN_INCH * dpi))
 
 
 # ===================== Работа с пользователем =====================
 def select_input_folder() -> Path:
     """Запрос папки у пользователя до тех пор, пока она не будет существовать."""
-
     while True:
         user_input = input("Укажите путь к папке с Excel-файлом: ").strip() or "."
         folder = Path(user_input).expanduser().resolve()
@@ -109,7 +132,6 @@ def select_input_folder() -> Path:
 
 def select_xlsx_file(folder: Path) -> Path:
     """Показать список .xlsx файлов и дать выбрать по номеру или имени."""
-
     files = sorted(folder.glob("*.xlsx"))
     if not files:
         raise FileNotFoundError("В выбранной папке нет файлов .xlsx")
@@ -134,7 +156,6 @@ def select_xlsx_file(folder: Path) -> Path:
 # ===================== Загрузка и проверка конфигурации =====================
 def load_config(base_folder: Path) -> Config:
     """Прочитать config.json рядом с Excel и наложить на значения по умолчанию."""
-
     config_path = base_folder / "config.json"
     config = replace(DEFAULT_CONFIG)
     if not config_path.exists():
@@ -144,7 +165,6 @@ def load_config(base_folder: Path) -> Config:
         with config_path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
     except json.JSONDecodeError as exc:  # noqa: BLE001
-        # Даём человеку понятное сообщение с указанием строки/столбца.
         msg = (
             f"config.json: ошибка синтаксиса JSON (строка {exc.lineno}, "
             f"столбец {exc.colno}): {exc.msg}"
@@ -161,7 +181,6 @@ def load_config(base_folder: Path) -> Config:
 
 def validate_config(config: Config) -> Config:
     """Проверить конфигурацию, выбрасывая ошибки и предупреждая о проблемах."""
-
     errors: List[str] = []
     warnings: List[str] = []
 
@@ -225,7 +244,6 @@ def validate_config(config: Config) -> Config:
 # ===================== Парсинг данных =====================
 def parse_fio(raw: str) -> str:
     """Привести ФИО к формату "Фамилия И.О."."""
-
     if raw is None:
         raise ValueError("Пустое значение ФИО")
 
@@ -253,7 +271,6 @@ def parse_fio(raw: str) -> str:
 
 def compute_ean13_check_digit(data12: str) -> str:
     """Вычислить контрольную цифру для 12-значной строки."""
-
     if len(data12) != 12 or not data12.isdigit():
         raise ValueError("Для контрольной цифры нужна 12-значная строка")
 
@@ -264,7 +281,6 @@ def compute_ean13_check_digit(data12: str) -> str:
 
 def normalize_barcode(value, row_index: int) -> str:
     """Преобразовать значение из Excel к валидному EAN-13."""
-
     if value is None:
         raise ValueError(f"Пустой штрихкод в строке {row_index}")
 
@@ -293,7 +309,6 @@ def normalize_barcode(value, row_index: int) -> str:
 
 def check_duplicates(rows: Sequence[Tuple[int, str]]) -> Dict[str, List[int]]:
     """Найти дублирующиеся штрихкоды и вернуть словарь barcode -> номера строк."""
-
     seen: Dict[str, List[int]] = {}
     for row_idx, barcode_value in rows:
         seen.setdefault(barcode_value, []).append(row_idx)
@@ -309,7 +324,6 @@ def resolve_font_path(font_path: Path, assets_dir: Path) -> Optional[Path]:
     2. Папка Fonts в Windows (если переменная окружения WINDIR задана).
     3. Стандартный DejaVuSans из поставки Pillow (если доступен).
     """
-
     candidates: List[Path] = []
 
     if font_path.is_absolute():
@@ -337,8 +351,7 @@ def resolve_font_path(font_path: Path, assets_dir: Path) -> Optional[Path]:
 
 
 def load_font(font_path: Path, font_size: int, assets_dir: Path) -> ImageFont.FreeTypeFont:
-    """Попробовать загрузить шрифт, при ошибке — вернуть встроенный."""
-
+    """Попробовать загрузить шрифт, при ошибке вернуть встроенный."""
     resolved = resolve_font_path(font_path, assets_dir)
     if resolved:
         try:
@@ -346,7 +359,6 @@ def load_font(font_path: Path, font_size: int, assets_dir: Path) -> ImageFont.Fr
         except Exception as exc:  # noqa: BLE001
             logger.warning("Не удалось загрузить шрифт %s (%s), fallback", resolved, exc)
 
-    # Попытка загрузить DejaVuSans из ресурсов Pillow по имени
     try:
         return ImageFont.truetype("DejaVuSans.ttf", font_size)
     except Exception as exc:  # noqa: BLE001
@@ -361,7 +373,6 @@ def load_font(font_path: Path, font_size: int, assets_dir: Path) -> ImageFont.Fr
 
 def measure_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -> Tuple[int, int]:
     """Совместимое измерение текста для Pillow >=10 (textbbox) и старых версий (textsize)."""
-
     if hasattr(draw, "textbbox"):
         bbox = draw.textbbox((0, 0), text, font=font)
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -369,14 +380,7 @@ def measure_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeF
 
 
 def make_barcode_image(code: str, target_width_px: int, height_scale_percent: float) -> Image.Image:
-    """Создать изображение штрихкода и масштабировать его по ширине.
-
-    Высота дополнительно умножается на коэффициент height_scale_percent, чтобы
-    можно было сделать штрихкод выше/ниже без изменения ширины (требование
-    макета сохранить пропорции по ширине).
-    """
-
-    # «write_text=False» отключает подпись цифр под штрихкодом — по требованию макета.
+    """Создать изображение штрихкода и масштабировать его по ширине."""
     writer = ImageWriter()
     ean = EAN13(code[:-1], writer=writer)  # библиотека сама добавит контрольную цифру
 
@@ -385,9 +389,6 @@ def make_barcode_image(code: str, target_width_px: int, height_scale_percent: fl
     buffer.seek(0)
     barcode_img = Image.open(buffer).convert("RGB")
 
-    # Масштабируем пропорционально по ширине (высота тянется автоматически),
-    # чтобы не было непропорциональных искажений штрихкода. Затем умножаем
-    # высоту на коэффициент из конфигурации, не трогая ширину.
     if target_width_px <= 0:
         raise ValueError("Ширина штрихкода должна быть положительной")
 
@@ -400,7 +401,6 @@ def make_barcode_image(code: str, target_width_px: int, height_scale_percent: fl
 
 def draw_card(config: Config, fio: str, barcode_value: str, assets_dir: Path) -> Image.Image:
     """Собрать карточку в Pillow для дальнейшего экспорта."""
-
     card_w_px = mm_to_px(config.card_width_mm)
     card_h_px = mm_to_px(config.card_height_mm)
     border_px = max(1, mm_to_px(config.card_border_thickness_mm))
@@ -408,10 +408,8 @@ def draw_card(config: Config, fio: str, barcode_value: str, assets_dir: Path) ->
     card = Image.new("RGB", (card_w_px, card_h_px), "white")
     draw = ImageDraw.Draw(card)
 
-    # Рисуем рамку
     draw.rectangle([(0, 0), (card_w_px - 1, card_h_px - 1)], outline="black", width=border_px)
 
-    # Текст ФИО
     font_path = Path(config.font_path)
     font = load_font(font_path, int(config.font_size_pt), assets_dir)
 
@@ -422,7 +420,6 @@ def draw_card(config: Config, fio: str, barcode_value: str, assets_dir: Path) ->
     if config.text_orientation == "horizontal":
         draw.text((text_x, text_y), fio, fill="black", font=font)
     else:
-        # Создаем отдельное изображение для вращения текста
         text_layer = Image.new("RGBA", (text_w, text_h), (255, 255, 255, 0))
         text_draw = ImageDraw.Draw(text_layer)
         text_draw.text((0, 0), fio, fill="black", font=font)
@@ -430,7 +427,6 @@ def draw_card(config: Config, fio: str, barcode_value: str, assets_dir: Path) ->
         rx, ry = rotated.size
         card.paste(rotated, ((card_w_px - rx) // 2, text_y), rotated)
 
-    # Штрихкод
     barcode_target_width_px = mm_to_px(config.barcode_width_mm)
     barcode_img = make_barcode_image(
         barcode_value,
@@ -455,7 +451,6 @@ def draw_card(config: Config, fio: str, barcode_value: str, assets_dir: Path) ->
 # ===================== Компоновка на листе A4 =====================
 def layout_cards_on_a4(cards: Sequence[Image.Image], config: Config, output_pdf: Path):
     """Разложить карточки по листам A4 и сохранить PDF."""
-
     page_w_pt = mm_to_points(A4_WIDTH_MM)
     page_h_pt = mm_to_points(A4_HEIGHT_MM)
     card_w_pt = mm_to_points(config.card_width_mm)
@@ -493,22 +488,16 @@ def layout_cards_on_a4(cards: Sequence[Image.Image], config: Config, output_pdf:
 # ===================== Открытие PDF =====================
 def open_pdf_file(pdf_path: Path):
     """Открыть сгенерированный PDF штатным просмотрщиком ОС."""
-
     if not pdf_path.exists():
         logger.warning("PDF %s не найден для открытия", pdf_path)
         return
 
     try:
-        # На Windows сначала пробуем os.startfile, а если система блокирует
-        # (групповые политики/ассоциации), используем запасной вариант через cmd /c start.
         if sys.platform.startswith("win"):
             try:
                 os.startfile(str(pdf_path))  # type: ignore[attr-defined]
             except OSError:
-                subprocess.Popen(
-                    ["cmd", "/c", "start", "", str(pdf_path)],
-                    shell=True,
-                )
+                subprocess.Popen(["cmd", "/c", "start", "", str(pdf_path)], shell=True)
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(pdf_path)])
         else:
@@ -521,7 +510,6 @@ def open_pdf_file(pdf_path: Path):
 # ===================== Экспорт PNG =====================
 def export_individual_cards(cards: Sequence[Tuple[str, str, Image.Image]], output_dir: Path):
     """Сохранить каждую карточку в PNG с именем по ФИО или штрихкоду."""
-
     output_dir.mkdir(parents=True, exist_ok=True)
     for fio, barcode_value, card_img in cards:
         name_part = fio if fio else barcode_value
@@ -533,29 +521,24 @@ def export_individual_cards(cards: Sequence[Tuple[str, str, Image.Image]], outpu
 # ===================== Чтение Excel =====================
 def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
     """Считать строки Excel и вернуть список (row_idx, fio, barcode)."""
-
     wb = load_workbook(filename=xlsx_path, read_only=True, data_only=True)
     sheet = wb.active
 
     entries: List[Tuple[int, str, str]] = []
     for idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-        # Пропускаем первую строку как заголовок
         if idx == 1:
             continue
 
         values = list(row)
-        # Пропускаем полностью пустые строки (включая ячейки с пустыми строками/пробелами)
         if not values or all((val is None) or (isinstance(val, str) and not val.strip()) for val in values):
             continue
 
         fio_raw = values[0] if len(values) > 0 else None
         barcode_raw = values[1] if len(values) > 1 else None
 
-        # Обрабатываем только строки, где в колонке ФИО есть содержимое
         if fio_raw is None or (isinstance(fio_raw, str) and not fio_raw.strip()):
             continue
 
-        # Предварительно очищаем ячейку штрихкода: оставляем только цифры, иначе считаем пустой
         if barcode_raw is not None:
             digits = re.sub(r"\D", "", str(barcode_raw).strip())
             if len(digits) not in {12, 13}:
@@ -585,12 +568,7 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
 
 # ===================== Логирование =====================
 def setup_logging(log_path: Path):
-    """Настроить логирование в файл и консоль.
-
-    Создает родительские каталоги при необходимости, записывает логи в файл
-    `cards.log` в папке Excel и дублирует сообщения в stdout.
-    """
-
+    """Настроить логирование в файл и консоль."""
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
@@ -613,7 +591,6 @@ def setup_logging(log_path: Path):
 # ===================== Помощники =====================
 def prompt_yes_no(message: str) -> bool:
     """Запросить подтверждение у пользователя (Y/N)."""
-
     while True:
         choice = input(f"{message} [Y/N]: ").strip().lower()
         if choice in {"y", "yes", "д", "да"}:
@@ -625,7 +602,6 @@ def prompt_yes_no(message: str) -> bool:
 
 def resolve_output_pdf(excel_path: Path) -> Path:
     """Определить имя выходного PDF с учетом существующих файлов."""
-
     base = excel_path.with_suffix("")
     candidate = base.with_suffix(".pdf")
     if not candidate.exists():
@@ -646,8 +622,7 @@ def resolve_output_pdf(excel_path: Path) -> Path:
 
 # ===================== Основной сценарий =====================
 def process_file(xlsx_path: Path):
-    """Полный цикл обработки одного Excel."""
-
+    """Полный цикл обработки одного Excel (CLI версия)."""
     folder = xlsx_path.parent
     setup_logging(folder / "cards.log")
     logger.info("Логирование включено: %s", folder / "cards.log")
@@ -676,7 +651,6 @@ def process_file(xlsx_path: Path):
     layout_cards_on_a4([card for _, _, card in cards], config, output_pdf)
     logger.info("PDF сохранен: %s", output_pdf)
 
-    # Открываем готовый PDF, чтобы пользователь сразу увидел результат
     open_pdf_file(output_pdf)
 
     if config.export_individual_cards:
@@ -685,9 +659,37 @@ def process_file(xlsx_path: Path):
         logger.info("Экспорт отдельных карточек: %s", export_dir)
 
 
+def process_file_web(xlsx_path: Path) -> Path:
+    """Версия для веба: без input() и без открытия PDF, с вшитым конфигом."""
+    folder = xlsx_path.parent
+    setup_logging(folder / "cards.log")
+
+    config = validate_config(replace(WEB_CONFIG))
+
+    entries = read_excel_rows(xlsx_path)
+
+    duplicates = check_duplicates([(row_idx, barcode) for row_idx, _, barcode in entries])
+    if duplicates:
+        dup_list = ", ".join(f"{code} (строки {rows})" for code, rows in duplicates.items())
+        logger.warning("Найдены дубли: %s", dup_list)
+
+    cards: List[Tuple[str, str, Image.Image]] = []
+    for _, fio, barcode in entries:
+        card_img = draw_card(config, fio, barcode, folder)
+        cards.append((fio, barcode, card_img))
+
+    output_pdf = xlsx_path.with_suffix(".pdf")
+    layout_cards_on_a4([card for _, _, card in cards], config, output_pdf)
+
+    if config.export_individual_cards:
+        export_dir = output_pdf.with_name("cards")
+        export_individual_cards(cards, export_dir)
+
+    return output_pdf
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Сформировать парсер аргументов командной строки."""
-
     parser = argparse.ArgumentParser(
         description="Генерация карточек со штрихкодами EAN-13 из Excel",
     )
@@ -702,7 +704,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None):
     """Точка входа CLI."""
-
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
@@ -721,29 +722,6 @@ def main(argv: Optional[Sequence[str]] = None):
         logger.exception("Критическая ошибка: %s", exc)
         print(f"Ошибка: {exc}")
         sys.exit(1)
-
-def process_file_web(xlsx_path: Path) -> Path:
-    """Версия для веба: без input() и без открытия PDF."""
-    folder = xlsx_path.parent
-    setup_logging(folder / "cards.log")
-
-    config = load_config(folder)
-    entries = read_excel_rows(xlsx_path)
-
-    duplicates = check_duplicates([(row_idx, barcode) for row_idx, _, barcode in entries])
-    if duplicates:
-        dup_list = ", ".join(f"{code} (строки {rows})" for code, rows in duplicates.items())
-        logger.warning("Найдены дубли: %s", dup_list)
-
-    cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
-        card_img = draw_card(config, fio, barcode, folder)
-        cards.append((fio, barcode, card_img))
-
-    output_pdf = xlsx_path.with_suffix(".pdf")
-    layout_cards_on_a4([card for _, _, card in cards], config, output_pdf)
-
-    return output_pdf
 
 
 if __name__ == "__main__":
