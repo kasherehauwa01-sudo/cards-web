@@ -33,6 +33,7 @@ from openpyxl import load_workbook
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+import xlrd
 
 # Константы конвертации и вывода
 MM_IN_INCH = 25.4
@@ -519,17 +520,28 @@ def export_individual_cards(cards: Sequence[Tuple[str, str, Image.Image]], outpu
 
 
 # ===================== Чтение Excel =====================
+def iter_excel_rows(excel_path: Path):
+    """Итерировать строки Excel вне зависимости от формата (.xlsx/.xls)."""
+    if excel_path.suffix.lower() == ".xls":
+        book = xlrd.open_workbook(excel_path)
+        sheet = book.sheet_by_index(0)
+        for idx in range(sheet.nrows):
+            yield idx + 1, sheet.row_values(idx)
+        return
+
+    wb = load_workbook(filename=excel_path, read_only=True, data_only=True)
+    sheet = wb.active
+    for idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+        yield idx, list(row)
+
+
 def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
     """Считать строки Excel и вернуть список (row_idx, fio, barcode)."""
-    wb = load_workbook(filename=xlsx_path, read_only=True, data_only=True)
-    sheet = wb.active
-
     entries: List[Tuple[int, str, str]] = []
-    for idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+    for idx, values in iter_excel_rows(xlsx_path):
         if idx == 1:
             continue
 
-        values = list(row)
         if not values or all((val is None) or (isinstance(val, str) and not val.strip()) for val in values):
             continue
 
@@ -659,14 +671,19 @@ def process_file(xlsx_path: Path):
         logger.info("Экспорт отдельных карточек: %s", export_dir)
 
 
-def process_file_web(xlsx_path: Path) -> Path:
+def process_file_web(
+    xlsx_path: Path,
+    entries: Optional[List[Tuple[int, str, str]]] = None,
+) -> Path:
     """Версия для веба: без input() и без открытия PDF, с вшитым конфигом."""
     folder = xlsx_path.parent
     setup_logging(folder / "cards.log")
 
     config = validate_config(replace(WEB_CONFIG))
 
-    entries = read_excel_rows(xlsx_path)
+    # Если список строк не передан, читаем весь Excel как раньше.
+    if entries is None:
+        entries = read_excel_rows(xlsx_path)
 
     duplicates = check_duplicates([(row_idx, barcode) for row_idx, _, barcode in entries])
     if duplicates:
