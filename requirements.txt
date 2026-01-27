@@ -3,3 +3,4 @@ openpyxl
 Pillow
 python-barcode
 reportlab
+xlrd
