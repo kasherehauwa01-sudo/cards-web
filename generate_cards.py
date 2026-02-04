@@ -270,6 +270,32 @@ def parse_fio(raw: str) -> str:
     return f"{surname} {initials}".strip()
 
 
+def normalize_text_value(value: object) -> Optional[str]:
+    """Нормализовать текст из Excel, устраняя возможную битую кодировку."""
+    if value is None:
+        return None
+
+    if isinstance(value, bytes):
+        for encoding in ("utf-8", "cp1251"):
+            try:
+                return value.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return value.decode("utf-8", errors="replace")
+
+    text = str(value)
+
+    # Попытка исправить «кракозябры» (UTF-8, прочитанный как Latin-1).
+    if any(ch in text for ch in ("Ã", "Â", "Ð", "Ñ")):
+        try:
+            fixed = text.encode("latin1").decode("utf-8")
+            return fixed
+        except UnicodeError:
+            pass
+
+    return text
+
+
 def compute_ean13_check_digit(data12: str) -> str:
     """Вычислить контрольную цифру для 12-значной строки."""
     if len(data12) != 12 or not data12.isdigit():
@@ -556,6 +582,7 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
         fio_raw = normalized_values[0] if len(normalized_values) > 0 else None
         barcode_raw = normalized_values[1] if len(normalized_values) > 1 else None
 
+        fio_raw = normalize_text_value(fio_raw)
         if fio_raw is None or (isinstance(fio_raw, str) and not fio_raw.strip()):
             continue
 

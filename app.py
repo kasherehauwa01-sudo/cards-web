@@ -63,8 +63,6 @@ if uploaded is not None:
         {
             "ФИО": fio,
             "Штрихкод": barcode,
-            "Выбрать": selection_state.get(row_idx, False),
-            "Строка": row_idx,
         }
         for row_idx, fio, barcode in filtered_entries
     ]
@@ -83,13 +81,18 @@ if uploaded is not None:
                 "Выбрать",
                 help="Отметьте строки для генерации карточек.",
                 default=False,
-            )
+            ),
+            "ФИО": st.column_config.TextColumn(
+                "ФИО",
+                help="Отображается первое слово как фамилия и инициалы.",
+                width="large",
+            ),
         },
-        disabled=["ФИО", "Штрихкод", "Строка"],
+        disabled=["ФИО", "Штрихкод"],
     )
 
-    for row in edited_rows:
-        selection_state[row["Строка"]] = row["Выбрать"]
+    for row, entry in zip(edited_rows, filtered_entries):
+        selection_state[entry[0]] = row["Выбрать"]
 
     st.caption(f"Выбрано строк: {sum(selection_state.values())}")
 
