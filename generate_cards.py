@@ -542,11 +542,19 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
         if idx == 1:
             continue
 
-        if not values or all((val is None) or (isinstance(val, str) and not val.strip()) for val in values):
+        normalized_values = list(values) if values else []
+        if len(normalized_values) > 1:
+            # Удаляем второй столбец перед обработкой, как требуется по условиям.
+            del normalized_values[1]
+
+        if not normalized_values or all(
+            (val is None) or (isinstance(val, str) and not val.strip())
+            for val in normalized_values
+        ):
             continue
 
-        fio_raw = values[0] if len(values) > 0 else None
-        barcode_raw = values[1] if len(values) > 1 else None
+        fio_raw = normalized_values[0] if len(normalized_values) > 0 else None
+        barcode_raw = normalized_values[1] if len(normalized_values) > 1 else None
 
         if fio_raw is None or (isinstance(fio_raw, str) and not fio_raw.strip()):
             continue
@@ -565,7 +573,7 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
             continue
 
         try:
-            fio = parse_fio(fio_raw)
+            fio = " ".join(str(fio_raw).strip().split())
             barcode = normalize_barcode(barcode_raw, idx)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"Строка {idx}: {exc}") from exc
@@ -655,7 +663,11 @@ def process_file(xlsx_path: Path):
             return
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
@@ -691,7 +703,11 @@ def process_file_web(
         logger.warning("Найдены дубли: %s", dup_list)
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
