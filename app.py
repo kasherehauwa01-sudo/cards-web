@@ -61,7 +61,6 @@ if uploaded is not None:
 
     table_rows = [
         {
-            "Выбрать": selection_state.get(row_idx, False),
             "ФИО": fio,
             "Штрихкод": barcode,
         }
@@ -73,6 +72,11 @@ if uploaded is not None:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "ФИО": st.column_config.TextColumn(
+                "ФИО",
+                help="Отображается первое слово как фамилия и инициалы.",
+                width="large",
+            ),
             "Выбрать": st.column_config.CheckboxColumn(
                 "Выбрать",
                 help="Отметьте строки для генерации карточек.",
