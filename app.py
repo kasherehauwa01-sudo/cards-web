@@ -52,11 +52,25 @@ if uploaded is not None:
         # Обновляем фильтр по мере ввода, чтобы поиск срабатывал без Enter.
         st.session_state["fio_query"] = st.session_state.get("fio_query_input", "")
 
-    fio_query = st.text_input(
-        "Поиск по ФИО",
-        key="fio_query_input",
-        on_change=sync_fio_query,
-    )
+    def clear_fio_query():
+        # Очищаем поле и фильтр по нажатию на иконку.
+        st.session_state["fio_query_input"] = ""
+        st.session_state["fio_query"] = ""
+
+    fio_input_col, fio_clear_col = st.columns([1, 0.08])
+    with fio_input_col:
+        fio_query = st.text_input(
+            "Поиск по ФИО",
+            key="fio_query_input",
+            on_change=sync_fio_query,
+        )
+    with fio_clear_col:
+        st.button(
+            "✖️",
+            key="clear_fio_query",
+            help="Очистить поиск по ФИО.",
+            on_click=clear_fio_query,
+        )
     if "fio_query" not in st.session_state:
         st.session_state["fio_query"] = fio_query
     fio_query = st.session_state.get("fio_query", fio_query)
