@@ -542,11 +542,19 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
         if idx == 1:
             continue
 
-        if not values or all((val is None) or (isinstance(val, str) and not val.strip()) for val in values):
+        normalized_values = list(values) if values else []
+        if len(normalized_values) > 1:
+            # Удаляем второй столбец перед обработкой, как требуется по условиям.
+            del normalized_values[1]
+
+        if not normalized_values or all(
+            (val is None) or (isinstance(val, str) and not val.strip())
+            for val in normalized_values
+        ):
             continue
 
-        fio_raw = values[0] if len(values) > 0 else None
-        barcode_raw = values[1] if len(values) > 1 else None
+        fio_raw = normalized_values[0] if len(normalized_values) > 0 else None
+        barcode_raw = normalized_values[1] if len(normalized_values) > 1 else None
 
         if fio_raw is None or (isinstance(fio_raw, str) and not fio_raw.strip()):
             continue
