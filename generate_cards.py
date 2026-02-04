@@ -285,13 +285,20 @@ def normalize_text_value(value: object) -> Optional[str]:
 
     text = str(value)
 
-    # Попытка исправить «кракозябры» (UTF-8, прочитанный как Latin-1).
-    if any(ch in text for ch in ("Ã", "Â", "Ð", "Ñ")):
+    def count_cyrillic(sample: str) -> int:
+        return len(re.findall(r"[А-Яа-яЁё]", sample))
+
+    candidates = [text]
+
+    for src, dst in (("latin1", "utf-8"), ("latin1", "cp1251"), ("cp1251", "utf-8")):
         try:
-            fixed = text.encode("latin1").decode("utf-8")
-            return fixed
+            candidates.append(text.encode(src).decode(dst))
         except UnicodeError:
-            pass
+            continue
+
+    best = max(candidates, key=count_cyrillic)
+    if count_cyrillic(best) > count_cyrillic(text):
+        return best
 
     return text
 
