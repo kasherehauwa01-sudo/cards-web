@@ -573,7 +573,7 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
             continue
 
         try:
-            fio = parse_fio(fio_raw)
+            fio = " ".join(str(fio_raw).strip().split())
             barcode = normalize_barcode(barcode_raw, idx)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"Строка {idx}: {exc}") from exc
@@ -663,7 +663,11 @@ def process_file(xlsx_path: Path):
             return
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
@@ -699,7 +703,11 @@ def process_file_web(
         logger.warning("Найдены дубли: %s", dup_list)
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
