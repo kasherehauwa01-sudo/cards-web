@@ -47,7 +47,19 @@ if uploaded is not None:
         selection_state.setdefault(row_idx, False)
 
     st.subheader("Данные из файла")
-    fio_query = st.text_input("Поиск по ФИО", key="fio_query")
+
+    def sync_fio_query():
+        # Обновляем фильтр по мере ввода, чтобы поиск срабатывал без Enter.
+        st.session_state["fio_query"] = st.session_state.get("fio_query_input", "")
+
+    fio_query = st.text_input(
+        "Поиск по ФИО",
+        key="fio_query_input",
+        on_change=sync_fio_query,
+    )
+    if "fio_query" not in st.session_state:
+        st.session_state["fio_query"] = fio_query
+    fio_query = st.session_state.get("fio_query", fio_query)
 
     filtered_entries = entries
     if fio_query.strip():
