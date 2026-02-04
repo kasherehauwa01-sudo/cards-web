@@ -145,10 +145,21 @@ if run:
 
             pdf_path = process_file_web(xlsx_path, entries=selected_entries)
 
-            st.success("Готово!")
-            st.download_button(
-                label="⬇️ Скачать PDF",
-                data=pdf_path.read_bytes(),
-                file_name=pdf_path.name,
-                mime="application/pdf",
-            )
+            st.success("Готово! Файл начнёт скачиваться автоматически.")
+            pdf_bytes = pdf_path.read_bytes()
+
+            # Автоматически запускаем скачивание без отдельной кнопки.
+            import base64
+
+            b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+            auto_download = f"""
+            <a id="auto-download" download="{pdf_path.name}"
+               href="data:application/pdf;base64,{b64_pdf}"></a>
+            <script>
+              const link = document.getElementById("auto-download");
+              if (link) {{
+                link.click();
+              }}
+            </script>
+            """
+            st.components.v1.html(auto_download, height=0)
