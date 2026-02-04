@@ -12,9 +12,7 @@ st.title("🧾 Генератор карточек со штрихкодами")
 st.markdown(
     """
 **Инструкция:**
-1. Подготовьте файл формата **.xlsx** или **.xls**, где:
-   - **первый столбец** содержит **ФИО**;
-   - **второй столбец** — **числовой штрихкод**.
+1. Подготовьте файл формата **.xlsx** или **.xls**.
 2. Загрузите подготовленный файл **.xlsx** / **.xls**.
 3. Отметьте нужные строки в таблице.
 4. Нажмите кнопку **«Сгенерировать»**.
@@ -49,13 +47,28 @@ if uploaded is not None:
         selection_state.setdefault(row_idx, False)
 
     st.subheader("Данные из файла")
-    fio_query = st.text_input("Поиск по ФИО")
+
+    def sync_fio_query():
+        # Обновляем фильтр по мере ввода, чтобы поиск срабатывал без Enter.
+        st.session_state["fio_query"] = st.session_state.get("fio_query_input", "")
+
+    fio_query = st.text_input(
+        "Поиск по ФИО",
+        key="fio_query_input",
+        on_change=sync_fio_query,
+    )
+    if "fio_query" not in st.session_state:
+        st.session_state["fio_query"] = fio_query
+    fio_query = st.session_state.get("fio_query", fio_query)
 
     filtered_entries = entries
     if fio_query.strip():
         query = fio_query.strip().lower()
         filtered_entries = [
-            entry for entry in entries if query in entry[1].lower()
+            entry
+            for entry in entries
+            # Ищем по первому слову в ФИО, чтобы фильтр срабатывал с первых символов.
+            if entry[1].split() and entry[1].split()[0].lower().startswith(query)
         ]
 
     table_rows = [
@@ -63,7 +76,6 @@ if uploaded is not None:
             "Выбрать": selection_state.get(row_idx, False),
             "ФИО": fio,
             "Штрихкод": barcode,
-            "Строка": row_idx,
         }
         for row_idx, fio, barcode in filtered_entries
     ]
@@ -77,13 +89,18 @@ if uploaded is not None:
                 "Выбрать",
                 help="Отметьте строки для генерации карточек.",
                 default=False,
-            )
+            ),
+            "ФИО": st.column_config.TextColumn(
+                "ФИО",
+                help="Отображается первое слово как фамилия и инициалы.",
+                width="large",
+            ),
         },
-        disabled=["ФИО", "Штрихкод", "Строка"],
+        disabled=["ФИО", "Штрихкод"],
     )
 
-    for row in edited_rows:
-        selection_state[row["Строка"]] = row["Выбрать"]
+    for row, entry in zip(edited_rows, filtered_entries):
+        selection_state[entry[0]] = row.get("Выбрать", False)
 
     st.caption(f"Выбрано строк: {sum(selection_state.values())}")
 
