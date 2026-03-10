@@ -85,6 +85,20 @@ if uploaded is not None:
             if entry[1].split() and entry[1].split()[0].lower().startswith(query)
         ]
 
+
+    # Увеличиваем шрифт именно в колонке «ФИО» до 13px для лучшей читаемости.
+    st.markdown(
+        """
+        <style>
+        /* Колонка с индексом 1: 0 — чекбокс «Выбрать», 1 — «ФИО». */
+        div[data-testid="stDataFrame"] div[role="gridcell"][data-col="1"] {
+            font-size: 13px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     table_rows = [
         {
             "Выбрать": selection_state.get(row_idx, False),

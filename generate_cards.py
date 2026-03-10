@@ -271,12 +271,13 @@ def parse_fio(raw: str) -> str:
 
 
 def normalize_text_value(value: object) -> Optional[str]:
-    """Нормализовать текст из Excel, устраняя возможную битую кодировку."""
+    """Нормализовать текст из Excel, устраняя «кракозябры» после неверной декодировки."""
     if value is None:
         return None
 
     if isinstance(value, bytes):
-        for encoding in ("utf-8", "cp1251"):
+        # Для бинарных значений пробуем самые типичные кодировки исходных Excel-данных.
+        for encoding in ("utf-8", "cp1251", "cp866", "koi8-r"):
             try:
                 return value.decode(encoding)
             except UnicodeDecodeError:
@@ -285,22 +286,45 @@ def normalize_text_value(value: object) -> Optional[str]:
 
     text = str(value)
 
-    def count_cyrillic(sample: str) -> int:
-        return len(re.findall(r"[А-Яа-яЁё]", sample))
+    def score_text(sample: str) -> tuple[int, int, int, int]:
+        """Оценка качества текста: больше кириллицы и меньше артефактов — лучше."""
+        cyr = len(re.findall(r"[А-Яа-яЁё]", sample))
+        latin = len(re.findall(r"[A-Za-z]", sample))
+        # Символы-паразиты часто встречаются в mojibake вида "Ð˜Ð²Ð°Ð½Ð¾Ð²".
+        mojibake = sum(sample.count(ch) for ch in ("Ð", "Ñ", "Ã", "Â", "�"))
+        printable = len(re.findall(r"[\wА-Яа-яЁё\s\.-]", sample, flags=re.UNICODE))
+        return (cyr, -mojibake, printable, -latin)
 
-    candidates = [text]
+    candidates = {text}
 
-    for src, dst in (("latin1", "utf-8"), ("latin1", "cp1251"), ("cp1251", "utf-8")):
-        try:
-            candidates.append(text.encode(src).decode(dst))
-        except UnicodeError:
-            continue
+    # Основные сценарии «перекодировки наоборот» для исправления битого текста.
+    transforms = (
+        ("latin1", "utf-8"),
+        ("cp1252", "utf-8"),
+        ("latin1", "cp1251"),
+        ("cp1252", "cp1251"),
+        ("cp1251", "utf-8"),
+    )
 
-    best = max(candidates, key=count_cyrillic)
-    if count_cyrillic(best) > count_cyrillic(text):
-        return best
+    frontier = [text]
+    for _ in range(2):
+        # Два прохода помогают при двойной порче кодировки.
+        next_frontier: list[str] = []
+        for sample in frontier:
+            for src, dst in transforms:
+                try:
+                    fixed = sample.encode(src).decode(dst)
+                except UnicodeError:
+                    continue
+                if fixed not in candidates:
+                    candidates.add(fixed)
+                    next_frontier.append(fixed)
+        frontier = next_frontier
+        if not frontier:
+            break
 
-    return text
+    best = max(candidates, key=score_text)
+    return " ".join(best.split())
 
 
 def compute_ean13_check_digit(data12: str) -> str:
