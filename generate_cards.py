@@ -86,10 +86,9 @@ WEB_CONFIG = Config(
     card_height_mm=16,
     card_border_thickness_mm=0.1,
 
-    # ВАЖНО: на Streamlit Cloud обычно Linux, пути C:\Windows\Fonts там нет.
-    # Если Arial не найдется, код уйдет в fallback (DejaVuSans).
-    # Если нужно 100% одинаково онлайн, добавь TTF в репозиторий и укажи "arial.ttf".
-    font_path=r"C:\Windows\Fonts\arial.ttf",
+    # В веб-режиме используем шрифт из репозитория (поддерживает кириллицу).
+    # Это устраняет «кракозябры» на Linux/Streamlit Cloud, где нет Windows Fonts.
+    font_path="ArialNarrow.TTF",
     font_size_pt=25,
     text_orientation="horizontal",
     text_top_offset_mm=1,
@@ -270,6 +269,63 @@ def parse_fio(raw: str) -> str:
     return f"{surname} {initials}".strip()
 
 
+def normalize_text_value(value: object) -> Optional[str]:
+    """Нормализовать текст из Excel, устраняя «кракозябры» после неверной декодировки."""
+    if value is None:
+        return None
+
+    if isinstance(value, bytes):
+        # Для бинарных значений пробуем самые типичные кодировки исходных Excel-данных.
+        for encoding in ("utf-8", "cp1251", "cp866", "koi8-r"):
+            try:
+                return value.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return value.decode("utf-8", errors="replace")
+
+    text = str(value)
+
+    def score_text(sample: str) -> tuple[int, int, int, int]:
+        """Оценка качества текста: больше кириллицы и меньше артефактов — лучше."""
+        cyr = len(re.findall(r"[А-Яа-яЁё]", sample))
+        latin = len(re.findall(r"[A-Za-z]", sample))
+        # Символы-паразиты часто встречаются в mojibake вида "Ð˜Ð²Ð°Ð½Ð¾Ð²".
+        mojibake = sum(sample.count(ch) for ch in ("Ð", "Ñ", "Ã", "Â", "�"))
+        printable = len(re.findall(r"[\wА-Яа-яЁё\s\.-]", sample, flags=re.UNICODE))
+        return (cyr, -mojibake, printable, -latin)
+
+    candidates = {text}
+
+    # Основные сценарии «перекодировки наоборот» для исправления битого текста.
+    transforms = (
+        ("latin1", "utf-8"),
+        ("cp1252", "utf-8"),
+        ("latin1", "cp1251"),
+        ("cp1252", "cp1251"),
+        ("cp1251", "utf-8"),
+    )
+
+    frontier = [text]
+    for _ in range(2):
+        # Два прохода помогают при двойной порче кодировки.
+        next_frontier: list[str] = []
+        for sample in frontier:
+            for src, dst in transforms:
+                try:
+                    fixed = sample.encode(src).decode(dst)
+                except UnicodeError:
+                    continue
+                if fixed not in candidates:
+                    candidates.add(fixed)
+                    next_frontier.append(fixed)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    best = max(candidates, key=score_text)
+    return " ".join(best.split())
+
+
 def compute_ean13_check_digit(data12: str) -> str:
     """Вычислить контрольную цифру для 12-значной строки."""
     if len(data12) != 12 or not data12.isdigit():
@@ -326,11 +382,17 @@ def resolve_font_path(font_path: Path, assets_dir: Path) -> Optional[Path]:
     3. Стандартный DejaVuSans из поставки Pillow (если доступен).
     """
     candidates: List[Path] = []
+    repo_dir = Path(__file__).resolve().parent
 
     if font_path.is_absolute():
         candidates.append(font_path)
     else:
         candidates.append(assets_dir / font_path)
+        # Для веб-версии Excel временно лежит в /tmp, поэтому проверяем и папку скрипта.
+        candidates.append(repo_dir / font_path)
+        # Часто файл в репозитории называется с другим регистром, добавляем оба варианта.
+        candidates.append(repo_dir / "ArialNarrow.TTF")
+        candidates.append(repo_dir / "ArialNarrow.ttf")
         windir = os.environ.get("WINDIR")
         if windir:
             win_fonts = Path(windir) / "Fonts"
@@ -542,12 +604,21 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
         if idx == 1:
             continue
 
-        if not values or all((val is None) or (isinstance(val, str) and not val.strip()) for val in values):
+        normalized_values = list(values) if values else []
+        if len(normalized_values) > 1:
+            # Удаляем второй столбец перед обработкой, как требуется по условиям.
+            del normalized_values[1]
+
+        if not normalized_values or all(
+            (val is None) or (isinstance(val, str) and not val.strip())
+            for val in normalized_values
+        ):
             continue
 
-        fio_raw = values[0] if len(values) > 0 else None
-        barcode_raw = values[1] if len(values) > 1 else None
+        fio_raw = normalized_values[0] if len(normalized_values) > 0 else None
+        barcode_raw = normalized_values[1] if len(normalized_values) > 1 else None
 
+        fio_raw = normalize_text_value(fio_raw)
         if fio_raw is None or (isinstance(fio_raw, str) and not fio_raw.strip()):
             continue
 
@@ -565,7 +636,7 @@ def read_excel_rows(xlsx_path: Path) -> List[Tuple[int, str, str]]:
             continue
 
         try:
-            fio = parse_fio(fio_raw)
+            fio = " ".join(str(fio_raw).strip().split())
             barcode = normalize_barcode(barcode_raw, idx)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"Строка {idx}: {exc}") from exc
@@ -655,7 +726,11 @@ def process_file(xlsx_path: Path):
             return
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
@@ -691,7 +766,11 @@ def process_file_web(
         logger.warning("Найдены дубли: %s", dup_list)
 
     cards: List[Tuple[str, str, Image.Image]] = []
-    for _, fio, barcode in entries:
+    for row_idx, fio_raw, barcode in entries:
+        try:
+            fio = parse_fio(fio_raw)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Строка {row_idx}: {exc}") from exc
         card_img = draw_card(config, fio, barcode, folder)
         cards.append((fio, barcode, card_img))
 
