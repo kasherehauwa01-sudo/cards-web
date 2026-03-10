@@ -86,10 +86,9 @@ WEB_CONFIG = Config(
     card_height_mm=16,
     card_border_thickness_mm=0.1,
 
-    # ВАЖНО: на Streamlit Cloud обычно Linux, пути C:\Windows\Fonts там нет.
-    # Если Arial не найдется, код уйдет в fallback (DejaVuSans).
-    # Если нужно 100% одинаково онлайн, добавь TTF в репозиторий и укажи "arial.ttf".
-    font_path=r"C:\Windows\Fonts\arial.ttf",
+    # В веб-режиме используем шрифт из репозитория (поддерживает кириллицу).
+    # Это устраняет «кракозябры» на Linux/Streamlit Cloud, где нет Windows Fonts.
+    font_path="ArialNarrow.TTF",
     font_size_pt=25,
     text_orientation="horizontal",
     text_top_offset_mm=1,
@@ -383,11 +382,17 @@ def resolve_font_path(font_path: Path, assets_dir: Path) -> Optional[Path]:
     3. Стандартный DejaVuSans из поставки Pillow (если доступен).
     """
     candidates: List[Path] = []
+    repo_dir = Path(__file__).resolve().parent
 
     if font_path.is_absolute():
         candidates.append(font_path)
     else:
         candidates.append(assets_dir / font_path)
+        # Для веб-версии Excel временно лежит в /tmp, поэтому проверяем и папку скрипта.
+        candidates.append(repo_dir / font_path)
+        # Часто файл в репозитории называется с другим регистром, добавляем оба варианта.
+        candidates.append(repo_dir / "ArialNarrow.TTF")
+        candidates.append(repo_dir / "ArialNarrow.ttf")
         windir = os.environ.get("WINDIR")
         if windir:
             win_fonts = Path(windir) / "Fonts"
